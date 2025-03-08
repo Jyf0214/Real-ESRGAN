@@ -117,44 +117,62 @@ def main():
         )
     
     # 显式地将模型移动到 CPU
-    upsampler.model = upsampler.model.to('cpu')
-    if  isinstance(upsampler.model_path,list):
-          loadnet = torch.load(upsampler.model_path[0], map_location=torch.device('cpu'))
-    else:
-          loadnet = torch.load(upsampler.model_path, map_location=torch.device('cpu'))
+    upsampler.model = upampler.model.to('cpu')
+    # if  isinstance(upsampler.model_path,list):  # 不需要这个判断
+    #       loadnet = torch.load(upsampler.model_path[0], map_location=torch.device('cpu'))
+    # else:
+    #       loadnet = torch.load(upsampler.model_path, map_location=torch.device('cpu'))
+    loadnet = torch.load(model_path, map_location=torch.device('cpu')) #直接使用model_path
 
     if 'params_ema' in loadnet:
         keyname = 'params_ema'
     else:
         keyname = 'params'
     upsampler.model.load_state_dict(loadnet[keyname], strict=True)
+    upsampler.model.eval() # 增加这一行，将模型设置为评估模式
+
 
     if args.face_enhance:  # Use GFPGAN for face enhancement
         from gfpgan import GFPGANer
+
+        # 下载或者指定gfpgan_model_path
+        gfpgan_model_url = 'https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth'
+        gfpgan_model_path = os.path.join('gfpgan/weights', 'GFPGANv1.3.pth')
+        if not os.path.isfile(gfpgan_model_path):
+              ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+              gfpgan_model_path = load_file_from_url(
+                  url=gfpgan_model_url,
+                  model_dir=os.path.join(ROOT_DIR, 'gfpgan/weights'),
+                  progress=True,
+                  file_name=None) # 不指定file_name, 让load_file_from_url自动命名
+
+
         face_enhancer = GFPGANer(
-            model_path='https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth',
+            model_path=gfpgan_model_path,  # 使用下载或指定的路径
             upscale=args.outscale,
             arch='clean',
             channel_multiplier=2,
             bg_upsampler=upsampler)
+
         # 显式地将人脸增强模型移动到CPU
         face_enhancer.face_enhancer = face_enhancer.face_enhancer.to('cpu')
-        face_enhancer.gfpgan_model_path = 'https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth'
-        if not os.path.isfile(face_enhancer.gfpgan_model_path):
-            # automatically download the GFPGAN model
-            gfpgan_model_path = 'gfpgan/weights/GFPGANv1.3.pth'
-            if not os.path.isfile(gfpgan_model_path):
-                ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-                gfpgan_model_path = load_file_from_url(
-                    url=face_enhancer.gfpgan_model_path,
-                    model_dir=os.path.join(ROOT_DIR, 'gfpgan/weights'),  # 修改为你的gfpgan模型存放路径
-                    progress=True,
-                    file_name='GFPGANv1.3.pth')
-            face_enhancer.gfpgan_model_path=gfpgan_model_path
+        # face_enhancer.gfpgan_model_path = 'https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth' #这行不需要了
+        # 下面的代码全部删除，因为前面已经下载和初始化了GFPGANer
+        # if not os.path.isfile(face_enhancer.gfpgan_model_path):
+        #     # automatically download the GFPGAN model
+        #     gfpgan_model_path = 'gfpgan/weights/GFPGANv1.3.pth'
+        #     if not os.path.isfile(gfpgan_model_path):
+        #         ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+        #         gfpgan_model_path = load_file_from_url(
+        #             url=face_enhancer.gfpgan_model_path,
+        #             model_dir=os.path.join(ROOT_DIR, 'gfpgan/weights'),  # 修改为你的gfpgan模型存放路径
+        #             progress=True,
+        #             file_name='GFPGANv1.3.pth')
+        #     face_enhancer.gfpgan_model_path=gfpgan_model_path
         face_enhancer.device = torch.device('cpu')
-        loadnet = torch.load(face_enhancer.gfpgan_model_path, map_location=torch.device('cpu'))
+        loadnet = torch.load(gfpgan_model_path, map_location=torch.device('cpu'))  # 使用gfpgan_model_path
         face_enhancer.face_enhancer.load_state_dict(loadnet['params_ema'])
-        face_enhancer.face_enhancer.eval()
+        face_enhancer.face_enhancer.eval() # 增加这一行
 
 
 
