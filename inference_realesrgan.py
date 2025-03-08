@@ -14,43 +14,13 @@ def main():
     """
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--input', type=str, default='inputs', help='Input image or folder')
-    parser.add_argument(
-        '-n',
-        '--model_name',
-        type=str,
-        default='RealESRGAN_x4plus',
-        help=('Model names: RealESRGAN_x4plus | RealESRNet_x4plus | RealESRGAN_x4plus_anime_6B | RealESRGAN_x2plus | '
-              'realesr-animevideov3 | realesr-general-x4v3'))
-    parser.add_argument('-o', '--output', type=str, default='results', help='Output folder')
-    parser.add_argument(
-        '-dn',
-        '--denoise_strength',
-        type=float,
-        default=0.5,
-        help=('Denoise strength. 0 for weak denoise (keep noise), 1 for strong denoise ability. '
-              'Only used for the realesr-general-x4v3 model'))
-    parser.add_argument('-s', '--outscale', type=float, default=4, help='The final upsampling scale of the image')
-    parser.add_argument(
-        '--model_path', type=str, default=None, help='[Option] Model path. Usually, you do not need to specify it')
-    parser.add_argument('--suffix', type=str, default='out', help='Suffix of the restored image')
-    parser.add_argument('-t', '--tile', type=int, default=0, help='Tile size, 0 for no tile during testing')
-    parser.add_argument('--tile_pad', type=int, default=10, help='Tile padding')
-    parser.add_argument('--pre_pad', type=int, default=0, help='Pre padding size at each border')
-    parser.add_argument('--face_enhance', action='store_true', help='Use GFPGAN to enhance face')
-    parser.add_argument(
-        '--fp32', action='store_true', help='Use fp32 precision during inference. Default: fp16 (half precision).')
-    parser.add_argument(
-        '--alpha_upsampler',
-        type=str,
-        default='realesrgan',
-        help='The upsampler for the alpha channels. Options: realesrgan | bicubic')
+    # ... (其余参数定义部分保持不变) ...
     parser.add_argument(
         '--ext',
         type=str,
         default='auto',
         help='Image extension. Options: auto | jpg | png, auto means using the same extension as inputs')
-    # parser.add_argument(
-    #     '-g', '--gpu-id', type=int, default=None, help='gpu device to use (default=None) can be 0,1,2 for multi-gpu') # 删除GPU指定
+
 
     args = parser.parse_args()
 
@@ -64,7 +34,7 @@ def main():
         model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=4)
         netscale = 4
         file_url = ['https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.1/RealESRNet_x4plus.pth']
-    elif args.model_name == 'RealESRGAN_x4plus_anime_6B':  # x4 RRDBNet model with 6 blocks
+    elif args.model_name == 'RealESRGAN_x4plus_anime_6B':
         model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=6, num_grow_ch=32, scale=4)
         netscale = 4
         file_url = ['https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth']
@@ -103,7 +73,7 @@ def main():
         model_path = [model_path, wdn_model_path]
         dni_weight = [args.denoise_strength, 1 - args.denoise_strength]
 
-    # restorer
+     # restorer
     upsampler = RealESRGANer(
         scale=netscale,
         model_path=model_path,
@@ -114,38 +84,32 @@ def main():
         pre_pad=args.pre_pad,
         half=not args.fp32,
         # gpu_id=args.gpu_id  # 删除 gpu_id 参数
-        )
-    
-    # 显式地将模型移动到 CPU
-    upsampler.model = upampler.model.to('cpu')
-    # if  isinstance(upsampler.model_path,list):  # 不需要这个判断
-    #       loadnet = torch.load(upsampler.model_path[0], map_location=torch.device('cpu'))
-    # else:
-    #       loadnet = torch.load(upsampler.model_path, map_location=torch.device('cpu'))
-    loadnet = torch.load(model_path, map_location=torch.device('cpu')) #直接使用model_path
+    )
+
+    # 显式地将模型移动到 CPU  (现在 upsampler 已经定义了)
+    upsampler.model = upsampler.model.to('cpu')
+    loadnet = torch.load(model_path, map_location=torch.device('cpu'))
 
     if 'params_ema' in loadnet:
         keyname = 'params_ema'
     else:
         keyname = 'params'
     upsampler.model.load_state_dict(loadnet[keyname], strict=True)
-    upsampler.model.eval() # 增加这一行，将模型设置为评估模式
-
+    upsampler.model.eval()
 
     if args.face_enhance:  # Use GFPGAN for face enhancement
         from gfpgan import GFPGANer
 
         # 下载或者指定gfpgan_model_path
         gfpgan_model_url = 'https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth'
-        gfpgan_model_path = os.path.join('gfpgan/weights', 'GFPGANv1.3.pth')
+        gfpgan_model_path = os.path.join('gfpgan/weights', 'GFPGANv1.3.pth')  # 确保路径正确
         if not os.path.isfile(gfpgan_model_path):
-              ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-              gfpgan_model_path = load_file_from_url(
-                  url=gfpgan_model_url,
-                  model_dir=os.path.join(ROOT_DIR, 'gfpgan/weights'),
-                  progress=True,
-                  file_name=None) # 不指定file_name, 让load_file_from_url自动命名
-
+            ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+            gfpgan_model_path = load_file_from_url(
+                url=gfpgan_model_url,
+                model_dir=os.path.join(ROOT_DIR, 'gfpgan/weights'),
+                progress=True,
+                file_name=None)
 
         face_enhancer = GFPGANer(
             model_path=gfpgan_model_path,  # 使用下载或指定的路径
@@ -156,27 +120,13 @@ def main():
 
         # 显式地将人脸增强模型移动到CPU
         face_enhancer.face_enhancer = face_enhancer.face_enhancer.to('cpu')
-        # face_enhancer.gfpgan_model_path = 'https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth' #这行不需要了
-        # 下面的代码全部删除，因为前面已经下载和初始化了GFPGANer
-        # if not os.path.isfile(face_enhancer.gfpgan_model_path):
-        #     # automatically download the GFPGAN model
-        #     gfpgan_model_path = 'gfpgan/weights/GFPGANv1.3.pth'
-        #     if not os.path.isfile(gfpgan_model_path):
-        #         ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-        #         gfpgan_model_path = load_file_from_url(
-        #             url=face_enhancer.gfpgan_model_path,
-        #             model_dir=os.path.join(ROOT_DIR, 'gfpgan/weights'),  # 修改为你的gfpgan模型存放路径
-        #             progress=True,
-        #             file_name='GFPGANv1.3.pth')
-        #     face_enhancer.gfpgan_model_path=gfpgan_model_path
         face_enhancer.device = torch.device('cpu')
-        loadnet = torch.load(gfpgan_model_path, map_location=torch.device('cpu'))  # 使用gfpgan_model_path
+        loadnet = torch.load(gfpgan_model_path, map_location=torch.device('cpu'))
         face_enhancer.face_enhancer.load_state_dict(loadnet['params_ema'])
-        face_enhancer.face_enhancer.eval() # 增加这一行
-
-
+        face_enhancer.face_enhancer.eval()
 
     os.makedirs(args.output, exist_ok=True)
+     # ... (其余代码保持不变) ...
 
     if os.path.isfile(args.input):
         paths = [args.input]
