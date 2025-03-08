@@ -84,6 +84,29 @@ def main():
             args.model_path = [args.model_path, wdn_path]
         dni_weight = [args.denoise_strength, 1 - args.denoise_strength]
 
+
+    if args.model_name == 'RealESRGAN_x4plus_anime_6B':
+        model = RRDBNet(3, 3, 64, 23, 32, 4) # 先用23层初始化
+
+    # 加载模型权重
+    loadnet = torch.load(args.model_path)
+    if 'params_ema' in loadnet:
+        keyname = 'params_ema'
+    else:
+        keyname = 'params'
+        
+    if args.model_name == 'RealESRGAN_x4plus_anime_6B':
+      # 移除不匹配的参数
+      for k in list(loadnet[keyname].keys()):
+           if 'model.0.body.' in k:
+                if int(k.split('.')[3])>5: # 如果RDB层数大于5
+                       del loadnet[keyname][k] #删除
+
+
+    model.load_state_dict(loadnet[keyname], strict=False)
+    model.eval()
+
+
     # 初始化超分辨率器
     upsampler = RealESRGANer(
         scale=netscale,
