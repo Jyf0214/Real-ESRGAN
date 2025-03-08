@@ -7,7 +7,7 @@ from basicsr.utils.download_util import load_file_from_url
 
 from realesrgan import RealESRGANer
 from realesrgan.archs.srvgg_arch import SRVGGNetCompact
-
+import torch  # 导入 torch 库
 
 def main():
     """Inference demo for Real-ESRGAN.
@@ -49,8 +49,8 @@ def main():
         type=str,
         default='auto',
         help='Image extension. Options: auto | jpg | png, auto means using the same extension as inputs')
-    parser.add_argument(
-        '-g', '--gpu-id', type=int, default=None, help='gpu device to use (default=None) can be 0,1,2 for multi-gpu')
+    # parser.add_argument(
+    #     '-g', '--gpu-id', type=int, default=None, help='gpu device to use (default=None) can be 0,1,2 for multi-gpu') # 删除GPU指定
 
     args = parser.parse_args()
 
@@ -113,7 +113,21 @@ def main():
         tile_pad=args.tile_pad,
         pre_pad=args.pre_pad,
         half=not args.fp32,
-        gpu_id=args.gpu_id)
+        # gpu_id=args.gpu_id  # 删除 gpu_id 参数
+        )
+    
+    # 显式地将模型移动到 CPU
+    upsampler.model = upsampler.model.to('cpu')
+    if  isinstance(upsampler.model_path,list):
+          loadnet = torch.load(upsampler.model_path[0], map_location=torch.device('cpu'))
+    else:
+          loadnet = torch.load(upsampler.model_path, map_location=torch.device('cpu'))
+
+    if 'params_ema' in loadnet:
+        keyname = 'params_ema'
+    else:
+        keyname = 'params'
+    upsampler.model.load_state_dict(loadnet[keyname], strict=True)
 
     if args.face_enhance:  # Use GFPGAN for face enhancement
         from gfpgan import GFPGANer
@@ -123,6 +137,27 @@ def main():
             arch='clean',
             channel_multiplier=2,
             bg_upsampler=upsampler)
+        # 显式地将人脸增强模型移动到CPU
+        face_enhancer.face_enhancer = face_enhancer.face_enhancer.to('cpu')
+        face_enhancer.gfpgan_model_path = 'https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth'
+        if not os.path.isfile(face_enhancer.gfpgan_model_path):
+            # automatically download the GFPGAN model
+            gfpgan_model_path = 'gfpgan/weights/GFPGANv1.3.pth'
+            if not os.path.isfile(gfpgan_model_path):
+                ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+                gfpgan_model_path = load_file_from_url(
+                    url=face_enhancer.gfpgan_model_path,
+                    model_dir=os.path.join(ROOT_DIR, 'gfpgan/weights'),  # 修改为你的gfpgan模型存放路径
+                    progress=True,
+                    file_name='GFPGANv1.3.pth')
+            face_enhancer.gfpgan_model_path=gfpgan_model_path
+        face_enhancer.device = torch.device('cpu')
+        loadnet = torch.load(face_enhancer.gfpgan_model_path, map_location=torch.device('cpu'))
+        face_enhancer.face_enhancer.load_state_dict(loadnet['params_ema'])
+        face_enhancer.face_enhancer.eval()
+
+
+
     os.makedirs(args.output, exist_ok=True)
 
     if os.path.isfile(args.input):
@@ -147,7 +182,7 @@ def main():
                 output, _ = upsampler.enhance(img, outscale=args.outscale)
         except RuntimeError as error:
             print('Error', error)
-            print('If you encounter CUDA out of memory, try to set --tile with a smaller number.')
+            print('If you encounter CUDA out of memory, try to set --tile with a smaller number.') #即使CPU运行,这个提示保留也没问题
         else:
             if args.ext == 'auto':
                 extension = extension[1:]
